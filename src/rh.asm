@@ -1,90 +1,66 @@
 		OUTPUT	"rh.rom"
 
 ;;=====================================================
-;;DEFINICIÓN DE VARIABLES Y ESTRUCTURAS
-;;=====================================================				
-		include "constantesyvariables/variablesyestructuras.asm"
-	
-;;=====================================================
-;;DEFINICIÓN DE CONSTANTES
-;;=====================================================	
-;	include "constantesyvariables/constantes.asm"
-;	include "constantesyvariables/constantesenemigos.asm"
-
-
-;;=====================================================
 ;;DEFINICIÓN DE CABECERA DE ARCHIVO BIN
 ;;=====================================================		
 		include "cabecerasyfijos/cabecerarom.asm"
 
 		
 START:		
-		include "cabecerasyfijos/iniciorom.asm"
+		include "cabecerasyfijos/iniciorom32.asm"
 
-			;cargando banco 0
-			;cargamos los patrones
-			LD				HL, tiles_patrones
-			LD				DE, CHRTBL
-			LD				BC, 2048
-			CALL			LDIRVM
-			;cargamos los colores de los patrones
-			LD				HL, tiles_color
-			LD				DE, CLRTBL
-			LD				BC, 2048
-			CALL			LDIRVM
-			;cargando banco 1
-			;cargamos los patrones
-			LD				HL, tiles_patrones
-			LD				DE, CHRTBL + #0800
-			LD				BC, 2048
-			CALL			LDIRVM
-			;cargamos los colores de los patrones
-			LD				HL, tiles_color
-			LD				DE, CLRTBL + #0800
-			LD				BC, 2048
-			CALL			LDIRVM
-			;cargando banco 2
-			;cargamos los patrones
-			LD				HL, tiles_patrones
-			LD				DE, CHRTBL + #1000
-			LD				BC, 2048
-			CALL			LDIRVM
-			;cargamos los colores de los patrones
-			LD				HL, tiles_color
-			LD				DE, CLRTBL + #1000
-			LD				BC, 2048
-			CALL			LDIRVM
-			
-			;CARGAMOS MAPA (EN ESTE CASO EN LOS 3 BANCOS)
-			LD				HL, tiles_mapa
-			LD				DE, TILMAP			;destino en vram
-			LD				BC, 768				;nº posiciones a pintar
-			CALL			LDIRVM
-			
-			;ESPERA A QUE SE PULSE UNA TECLA
-			CALL			CHGET
-			
-			;RETORNA AL BASIC
-			RET	
+		di
+		im	1
+		ld	a, 0C3h
+		ld	(H_TIMI), a
+		ld	hl, tickMain
+		ld	(H_TIMI+1), hl	; Pone la rutina de interrupcion que lleva la logica del juego
 
-;END:	
-		
-		
-;dejo esto por si me interesa cambiar color de fondo para que parezca más
-;al resultado final
-color_pantalla:
-			XOR		 		 A					;color negro
-			LD				(FORCLR), A
-			LD				(BAKCLR), A
-			LD				(BDRCLR), A
-			JP				CHGCLR
-;fin_color_pantalla_negro:
-	
+		ld	a, 1
+		ld	(tickInProgress), a ; Evita que	se ejecute la logica del juego mientras	se inicializa el hardware
+		call	initHardware	; Inicializa el	modo de	video y	el PSG
 
-tiles_patrones:				incbin "prueba.til.bin"
-tiles_color:				incbin "prueba.col.bin"
-tiles_mapa:					incbin "prueba.map.todo.bin"
+		xor	a
+		ld	(tickInProgress), a ; Permite que se ejecute la	logica del juego en la proxima interrupcion
+		call	RDVDP		; Borra	el flag	de interrupcion
+		ei
+
+dummyLoop:
+		jr	$
+END:
 
 
+
+;-------------------------------------------------------------------------------
+;
+; TICKMAIN
+;
+; Funcion principal llamada desde el gancho de interrupcion (50	o 60 Hz)
+; Actualiza el reproductor de sonido
+; Evita	que se ejecute la logica al producirse una interrupcion	si no ha
+; terminado la iteracion anterior
+;-------------------------------------------------------------------------------
+
+tickMain:
+		di
+		call	updateSound	; Actualiza el driver de sonido
+
+		ld	hl, tickInProgress ; Si	el bit0	esta a 1 no se ejecuta la logica del juego
+		bit	0, (hl)
+		ret	nz			
+
+		inc	(hl)		; Indica que se	va a realizar una iteracion
+		ei
+		call	chkControls	; Actualiza el estado de los controles
+		call	runGame		; Ejecuta la logica del	juego
+
+		xor	a
+		ld	(tickInProgress), a ; Indica que ha terminado la iteracion actual
+		ret
+
+
+;;
+;;INICIO ZONA DATOS (BANCO DE MEMORIA 3)
+;;
 DS				#8000-$			;;;;;;;;;;;;;;;;;;;;;;;;FER:  hay que hacer bloques completos de 8/16/etc KB
 
